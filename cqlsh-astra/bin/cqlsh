@@ -1,0 +1,61 @@
+#!/bin/sh
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# bash code here; finds a suitable python interpreter and execs this file.
+# prefer unqualified "python" if suitable:
+export PYTHONPATH="/usr/share/dse/cassandra/pylib:$PYTHONPATH"
+
+# get a version string for a Python interpreter
+get_python_version() {
+    interpreter=$1
+    version=$(command -v "$interpreter" > /dev/null 2>&1 && $interpreter -c "import os; print('{}.{}'.format(os.sys.version_info.major, os.sys.version_info.minor))")
+    echo "$version"
+}
+
+# test whether a version string matches one of the supported versions for cqlsh
+is_supported_version() {
+    version=$1
+    major_version="${version%.*}"
+    minor_version="${version#*.}"
+    # python3.6+ is supported. python2.7 is deprecated but still compatible.
+    if [ "$major_version" = 3 ] && [ "$minor_version" -ge 6 ] || [ "$version" = "2.7" ]; then
+        echo "supported"
+    else
+        echo "unsupported"
+    fi
+}
+
+run_if_supported_version() {
+    # get the interpreter and remove it from argument
+    interpreter="$1" shift
+
+    version=$(get_python_version "$interpreter")
+    if [ -n "$version" ]; then
+        if [ "$(is_supported_version "$version")" = "supported" ]; then
+            exec "$interpreter" "$($interpreter -c "import os; print(os.path.dirname(os.path.realpath('$0')))")/dsecqlsh.py" "$@"
+            exit
+        fi
+    fi
+}
+
+# try unqualified python2 first, then the system python, then python3
+for interpreter in python2 python python3; do
+    run_if_supported_version "$interpreter" "$@"
+done
+
+echo "No appropriate python interpreter found." >&2
+exit 1
